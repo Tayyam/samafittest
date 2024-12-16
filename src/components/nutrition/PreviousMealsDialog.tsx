@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Dialog } from '../ui/Dialog';
 import { getUserPreviousMeals } from '../../lib/firebase/nutrition';
+import { format, parseISO } from 'date-fns';
+import { ar } from 'date-fns/locale';
 import type { NutritionEntry } from '../../types';
 
 interface PreviousMealsDialogProps {
@@ -28,16 +30,28 @@ export const PreviousMealsDialog = ({
     try {
       setLoading(true);
       const previousMeals = await getUserPreviousMeals();
-      // تجميع الوجبات المتكررة وإزالة التكرار
+      
+      // تجميع الوجبات المتكررة وإزالة التكرار مع الاحتفاظ بأحدث تاريخ
       const uniqueMeals = previousMeals.reduce((acc, meal) => {
-        const key = `${meal.food}-${meal.calories}`;
-        if (!acc[key]) {
-          acc[key] = meal;
+        const key = `${meal.food}-${meal.amount}-${meal.unit}`;
+        const mealDate = meal.date instanceof Date 
+          ? meal.date 
+          : typeof meal.date === 'string' 
+            ? parseISO(meal.date)
+            : new Date(meal.date.seconds * 1000); // للتعامل مع Timestamp من Firestore
+
+        if (!acc[key] || mealDate > new Date(acc[key].date)) {
+          acc[key] = {
+            ...meal,
+            date: mealDate
+          };
         }
         return acc;
       }, {} as Record<string, NutritionEntry>);
       
-      setMeals(Object.values(uniqueMeals));
+      setMeals(Object.values(uniqueMeals).sort((a, b) => 
+        new Date(b.date).getTime() - new Date(a.date).getTime()
+      ));
     } catch (error) {
       console.error('Error loading previous meals:', error);
     } finally {
@@ -49,13 +63,35 @@ export const PreviousMealsDialog = ({
     meal.food.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleSelect = (meal: NutritionEntry) => {
-    onSelect({
-      ...meal,
-      date: new Date(),
-      id: Date.now().toString()
-    });
-    onClose();
+  const handleSelect = async (meal: NutritionEntry) => {
+    try {
+      const { id, ...mealData } = meal;
+      const newMeal = {
+        ...mealData,
+        date: new Date()
+      };
+      
+      await onSelect(newMeal);
+      onClose();
+    } catch (error) {
+      console.error('Error selecting meal:', error);
+    }
+  };
+
+  const formatDate = (date: Date | string | { seconds: number, nanoseconds: number }) => {
+    try {
+      if (date instanceof Date) {
+        return format(date, 'dd/MM/yyyy', { locale: ar });
+      } else if (typeof date === 'string') {
+        return format(parseISO(date), 'dd/MM/yyyy', { locale: ar });
+      } else if (date && 'seconds' in date) {
+        return format(new Date(date.seconds * 1000), 'dd/MM/yyyy', { locale: ar });
+      }
+      return 'تاريخ غير صالح';
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      return 'تاريخ غير صالح';
+    }
   };
 
   return (
@@ -81,15 +117,19 @@ export const PreviousMealsDialog = ({
           <div className="max-h-96 overflow-y-auto space-y-2">
             {filteredMeals.map((meal) => (
               <button
-                key={`${meal.food}-${meal.calories}`}
+                key={`${meal.food}-${meal.amount}-${meal.unit}`}
                 onClick={() => handleSelect(meal)}
-                className="w-full flex items-center justify-between p-3 bg-gray-50 rounded-md hover:bg-gray-100 transition-colors"
+                className="w-full text-right flex flex-col p-3 bg-gray-50 rounded-md hover:bg-gray-100 transition-colors"
               >
-                <div>
-                  <div className="font-medium">{meal.food}</div>
-                  <div className="text-sm text-gray-500">
-                    {meal.calories} سعرة | بروتين: {meal.protein}g | كارب: {meal.carbs}g | دهون: {meal.fats}g
-                  </div>
+                <div className="font-medium">{meal.food}</div>
+                <div className="text-sm text-gray-500">
+                  {meal.amount} {meal.unit}
+                </div>
+                <div className="text-sm text-gray-500">
+                  {meal.calories} سعرة | بروتين: {meal.protein}g | كارب: {meal.carbs}g | دهون: {meal.fats}g
+                </div>
+                <div className="text-xs text-gray-400 mt-1">
+                  {formatDate(meal.date)}
                 </div>
               </button>
             ))}
@@ -99,15 +139,6 @@ export const PreviousMealsDialog = ({
             {searchTerm ? 'لا توجد نتائج' : 'لا توجد وجبات سابقة'}
           </p>
         )}
-
-        <div className="flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-          >
-            إغلاق
-          </button>
-        </div>
       </div>
     </Dialog>
   );

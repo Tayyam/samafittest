@@ -1,15 +1,16 @@
 import { useState, useEffect } from 'react';
 import { 
   getNutritionEntriesByDate, 
+  addNutritionEntry,
   deleteNutritionEntry,
-  deleteAllNutritionEntries 
+  deleteAllNutritionEntries,
+  copyNutritionEntries 
 } from '../lib/firebase/nutrition';
 import type { NutritionEntry } from '../types';
 
 export const useNutrition = (selectedDate: Date) => {
   const [entries, setEntries] = useState<NutritionEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [analysisLoading, setAnalysisLoading] = useState(false);
 
   useEffect(() => {
     loadEntries();
@@ -18,8 +19,7 @@ export const useNutrition = (selectedDate: Date) => {
   const loadEntries = async () => {
     try {
       setLoading(true);
-      const data = await getNutritionEntriesByDate(selectedDate.toISOString());
-      console.log('Loaded entries:', data);
+      const data = await getNutritionEntriesByDate(selectedDate);
       setEntries(data);
     } catch (error) {
       console.error('Error loading entries:', error);
@@ -28,17 +28,35 @@ export const useNutrition = (selectedDate: Date) => {
     }
   };
 
-  const addEntry = async (entry: NutritionEntry) => {
+  const addEntry = async (entry: Omit<NutritionEntry, 'id'>) => {
     try {
-      setAnalysisLoading(true);
-      // إضافة الإدخال الجديد إلى القائمة
-      setEntries(prev => [...prev, entry]);
-      await loadEntries(); // إعادة تحميل القائمة للتأكد من التحديث
+      const newEntry = await addNutritionEntry({
+        ...entry,
+        date: selectedDate
+      });
+      setEntries(prev => [...prev, newEntry]);
+      return newEntry;
     } catch (error) {
       console.error('Error adding entry:', error);
       throw error;
-    } finally {
-      setAnalysisLoading(false);
+    }
+  };
+
+  const addMultipleEntries = async (newEntries: Omit<NutritionEntry, 'id'>[]) => {
+    try {
+      const addedEntries = await Promise.all(
+        newEntries.map(entry => 
+          addNutritionEntry({
+            ...entry,
+            date: selectedDate
+          })
+        )
+      );
+      setEntries(prev => [...prev, ...addedEntries]);
+      return addedEntries;
+    } catch (error) {
+      console.error('Error adding multiple entries:', error);
+      throw error;
     }
   };
 
@@ -62,12 +80,25 @@ export const useNutrition = (selectedDate: Date) => {
     }
   };
 
+  const copyEntriesFromDate = async (sourceDate: Date) => {
+    try {
+      const copiedEntries = await copyNutritionEntries(sourceDate, selectedDate);
+      setEntries(prev => [...prev, ...copiedEntries]);
+      return copiedEntries;
+    } catch (error) {
+      console.error('Error copying entries:', error);
+      throw error;
+    }
+  };
+
   return {
     entries,
     loading,
-    analysisLoading,
     addEntry,
+    addMultipleEntries,
     deleteEntry,
-    deleteAllEntries
+    deleteAllEntries,
+    copyEntriesFromDate,
+    refresh: loadEntries
   };
 };

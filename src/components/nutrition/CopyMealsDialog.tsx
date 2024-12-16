@@ -1,7 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog } from '../ui/Dialog';
 import { getNutritionEntriesByDate } from '../../lib/firebase/nutrition';
+import { format } from 'date-fns';
+import { ar } from 'date-fns/locale';
 import type { NutritionEntry } from '../../types';
+import { Button } from '../ui/Button';
 
 interface CopyMealsDialogProps {
   isOpen: boolean;
@@ -16,15 +19,20 @@ export const CopyMealsDialog = ({
   onCopy,
   currentDate
 }: CopyMealsDialogProps) => {
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [loading, setLoading] = useState(false);
   const [entries, setEntries] = useState<NutritionEntry[]>([]);
 
-  const handleDateChange = async (date: string) => {
-    setSelectedDate(new Date(date));
+  useEffect(() => {
+    if (isOpen && selectedDate) {
+      loadMeals();
+    }
+  }, [isOpen, selectedDate]);
+
+  const loadMeals = async () => {
     setLoading(true);
     try {
-      const meals = await getNutritionEntriesByDate(date);
+      const meals = await getNutritionEntriesByDate(selectedDate);
       setEntries(meals);
     } catch (error) {
       console.error('Error fetching meals:', error);
@@ -33,9 +41,21 @@ export const CopyMealsDialog = ({
     }
   };
 
+  const handleDateChange = (date: string) => {
+    setSelectedDate(new Date(date));
+  };
+
   const handleCopy = async () => {
     try {
-      await Promise.all(entries.map(entry => onCopy({ ...entry, date: currentDate })));
+      const copiedEntries = entries.map(entry => {
+        const { id, ...entryData } = entry;
+        return {
+          ...entryData,
+          date: currentDate
+        };
+      });
+      
+      await onCopy(copiedEntries);
       onClose();
     } catch (error) {
       console.error('Error copying meals:', error);
@@ -55,8 +75,9 @@ export const CopyMealsDialog = ({
           </label>
           <input
             type="date"
-            value={selectedDate.toISOString().split('T')[0]}
+            value={format(selectedDate, 'yyyy-MM-dd')}
             onChange={(e) => handleDateChange(e.target.value)}
+            max={format(new Date(), 'yyyy-MM-dd')}
             className="w-full rounded-md border-gray-300 shadow-sm focus:border-sama-light focus:ring-sama-light"
           />
         </div>
@@ -66,17 +87,19 @@ export const CopyMealsDialog = ({
         ) : entries.length > 0 ? (
           <div className="space-y-2">
             <p className="text-sm text-gray-600">الوجبات المتوفرة:</p>
-            {entries.map((entry) => (
-              <div
-                key={entry.id}
-                className="flex items-center justify-between p-2 bg-gray-50 rounded-md"
-              >
-                <span>{entry.food}</span>
-                <span className="text-sm text-gray-500">
-                  {entry.calories} سعرة
-                </span>
-              </div>
-            ))}
+            <div className="max-h-64 overflow-y-auto space-y-2">
+              {entries.map((entry) => (
+                <div
+                  key={entry.id}
+                  className="flex items-center justify-between p-2 bg-gray-50 rounded-md"
+                >
+                  <span>{entry.food}</span>
+                  <span className="text-sm text-gray-500">
+                    {entry.calories} سعرة
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         ) : (
           <p className="text-center text-gray-500">لا توجد وجبات في هذا اليوم</p>

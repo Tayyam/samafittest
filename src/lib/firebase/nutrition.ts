@@ -8,7 +8,9 @@ import {
   orderBy,
   limit,
   deleteDoc,
-  doc
+  doc,
+  startOf,
+  endOf
 } from 'firebase/firestore';
 import { db } from './config';
 import type { SavedFood } from '../../types/nutrition';
@@ -16,6 +18,9 @@ import { auth } from './config';
 import type { NutritionEntry } from '../../types';
 import { findNutritionProperty } from './nutritionProperties';
 import { analyzeNutrition } from '../openai/nutrition';
+import { startOfDay, endOfDay } from 'date-fns';
+
+const COLLECTION_NAME = 'nutritionEntries';
 
 export const getSavedFoods = async (userId: string): Promise<SavedFood[]> => {
   const q = query(
@@ -58,96 +63,35 @@ export const getUserPreviousMeals = async () => {
   })) as NutritionEntry[];
 };
 
-export const getNutritionEntriesByDate = async (date: string) => {
-  const { currentUser } = auth;
-  if (!currentUser) throw new Error('No user logged in');
-
-  const startDate = new Date(date);
-  startDate.setHours(0, 0, 0, 0);
-  const endDate = new Date(date);
-  endDate.setHours(23, 59, 59, 999);
-
-  const mealsRef = collection(db, 'nutrition');
+export const getNutritionEntriesByDate = async (date: Date) => {
+  const entriesRef = collection(db, COLLECTION_NAME);
+  const start = startOfDay(date);
+  const end = endOfDay(date);
+  
   const q = query(
-    mealsRef,
-    where('userId', '==', currentUser.uid),
-    where('date', '>=', startDate),
-    where('date', '<=', endDate)
+    entriesRef,
+    where('date', '>=', start),
+    where('date', '<=', end)
   );
-
+  
   const snapshot = await getDocs(q);
   return snapshot.docs.map(doc => ({
     id: doc.id,
-    ...doc.data(),
-    date: doc.data().date?.toDate() || new Date()
+    ...doc.data()
   })) as NutritionEntry[];
 };
 
-export const addNutritionEntry = async (data: NutritionAnalysis) => {
-  try {
-    if (!auth.currentUser) throw new Error('No user logged in');
-    if (!data.food) throw new Error('Food name is required');
-
-    const normalizedFoodName = data.food.trim().toLowerCase();
-
-    const existingProperty = await findNutritionProperty(normalizedFoodName);
-    
-    let nutritionData;
-    
-    if (existingProperty) {
-      const ratio = data.amount / existingProperty.standardServing;
-      nutritionData = {
-        food: data.food,
-        amount: data.amount,
-        unit: data.unit || 'جرام',
-        calories: Math.round(existingProperty.calories * ratio),
-        protein: +(existingProperty.protein * ratio).toFixed(1),
-        carbs: +(existingProperty.carbs * ratio).toFixed(1),
-        fats: +(existingProperty.fats * ratio).toFixed(1)
-      };
-    } else {
-      const standardRatio = 100 / data.amount;
-      
-      await addNutritionProperty({
-        name: normalizedFoodName,
-        standardServing: 100,
-        unit: 'جرام',
-        calories: Math.round(data.calories * standardRatio),
-        protein: +(data.protein * standardRatio).toFixed(1),
-        carbs: +(data.carbs * standardRatio).toFixed(1),
-        fats: +(data.fats * standardRatio).toFixed(1)
-      });
-
-      nutritionData = {
-        food: data.food,
-        amount: data.amount,
-        unit: data.unit || 'جرام',
-        calories: Math.round(data.calories),
-        protein: +data.protein.toFixed(1),
-        carbs: +data.carbs.toFixed(1),
-        fats: +data.fats.toFixed(1)
-      };
-    }
-
-    const entryRef = collection(db, 'nutrition');
-    const docRef = await addDoc(entryRef, {
-      ...nutritionData,
-      userId: auth.currentUser.uid,
-      date: serverTimestamp(),
-      createdAt: serverTimestamp()
-    });
-
-    return {
-      id: docRef.id,
-      ...nutritionData,
-      userId: auth.currentUser.uid,
-      date: new Date()
-    };
-
-  } catch (error) {
-    console.error('Error adding nutrition entry:', error);
-    throw error;
-  }
+export const addNutritionEntry = async (data: Omit<NutritionEntry, 'id'>) => {
+  const entriesRef = collection(db, COLLECTION_NAME);
+  const docRef = await addDoc(entriesRef, {
+    ...data,
+    createdAt: serverTimestamp()
+  });
+  
+  return {
+    id: docRef.id,
+    ...data
+  } as NutritionEntry;
 };
 
 export const addNutritionProperty = async (data: NutritionPropertyInput) => {
@@ -174,46 +118,64 @@ export const addNutritionProperty = async (data: NutritionPropertyInput) => {
 };
 
 export const deleteNutritionEntry = async (id: string) => {
-  try {
-    if (!auth.currentUser) throw new Error('No user logged in');
-
-    const entryRef = doc(db, 'nutrition', id);
-    
-    await deleteDoc(entryRef);
-    
-    console.log('Successfully deleted entry:', id);
-  } catch (error) {
-    console.error('Error deleting nutrition entry:', error);
-    throw new Error('فشل في حذف الوجبة');
-  }
+  const entryRef = doc(db, COLLECTION_NAME, id);
+  await deleteDoc(entryRef);
 };
 
 export const deleteAllNutritionEntries = async (date: Date) => {
+  const entries = await getNutritionEntriesByDate(date);
+  await Promise.all(entries.map(entry => deleteNutritionEntry(entry.id)));
+};
+
+export const copyNutritionEntries = async (sourceDate: Date, targetDate: Date) => {
   try {
-    if (!auth.currentUser) throw new Error('No user logged in');
-
-    const startDate = new Date(date);
-    startDate.setHours(0, 0, 0, 0);
+    const entries = await getNutritionEntriesByDate(sourceDate);
     
-    const endDate = new Date(date);
-    endDate.setHours(23, 59, 59, 999);
-
-    const entriesRef = collection(db, 'nutrition');
-    const q = query(
-      entriesRef,
-      where('userId', '==', auth.currentUser.uid),
-      where('date', '>=', startDate),
-      where('date', '<=', endDate)
+    const copiedEntries = await Promise.all(
+      entries.map(entry => {
+        const { id, ...entryData } = entry;
+        const newEntry = {
+          ...entryData,
+          date: targetDate,
+          createdAt: serverTimestamp()
+        };
+        return addNutritionEntry(newEntry);
+      })
     );
 
-    const snapshot = await getDocs(q);
-    
-    const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
-    await Promise.all(deletePromises);
-    
-    console.log('Successfully deleted all entries for date:', date);
+    return copiedEntries;
   } catch (error) {
-    console.error('Error deleting all nutrition entries:', error);
-    throw new Error('فشل في حذف جميع الوجبات');
+    console.error('Error copying nutrition entries:', error);
+    throw new Error('فشل في نسخ الوجبات');
   }
+};
+
+export const getNutritionHistory = async (userId: string) => {
+  const entriesRef = collection(db, COLLECTION_NAME);
+  const q = query(
+    entriesRef,
+    where('userId', '==', userId),
+    where('date', '<=', new Date())
+  );
+  
+  const snapshot = await getDocs(q);
+  const entries = snapshot.docs.map(doc => ({
+    id: doc.id,
+    ...doc.data()
+  })) as NutritionEntry[];
+
+  // Group entries by date
+  const groupedEntries = entries.reduce((acc, entry) => {
+    const dateStr = new Date(entry.date).toDateString();
+    if (!acc[dateStr]) {
+      acc[dateStr] = {
+        date: new Date(entry.date),
+        meals: []
+      };
+    }
+    acc[dateStr].meals.push(entry);
+    return acc;
+  }, {} as Record<string, { date: Date; meals: NutritionEntry[] }>);
+
+  return Object.values(groupedEntries);
 };
