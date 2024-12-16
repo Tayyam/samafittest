@@ -10,32 +10,33 @@ import { analyzeNutritionText } from '../../lib/ai/nutritionAnalyzer';
 export const NutritionPage = () => {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const { entries, addEntry, deleteEntry, deleteAllEntries, loading } = useNutrition(selectedDate);
-  const { loading: analysisLoading, handleAnalysis } = useNutritionAnalysis();
+  const { loading: analysisLoading, handleBatchAnalysis } = useNutritionAnalysis();
 
   const handleNutritionSubmit = async (text: string) => {
     try {
       const meals = await analyzeNutritionText(text);
       
-      // إضافة كل الوجبات المحللة إلى الجدول مباشرة
-      for (const meal of meals) {
-        for (const food of meal.foods) {
-          const analysis = await handleAnalysis({
-            food: food.food,
-            quantity: food.quantity,
-            unit: food.unit
-          });
+      // تجميع كل الأطعمة من جميع الوجبات
+      const allFoods = meals.flatMap(meal => meal.foods);
+      
+      // تحليل جميع الأطعمة دفعة واحدة
+      const analysisResults = await handleBatchAnalysis(allFoods);
 
-          await addEntry({
-            food: food.food,
-            quantity: food.quantity || '1',
-            unit: food.unit || '',
-            calories: Math.round(analysis.calories),
-            protein: Math.round(analysis.protein),
-            carbs: Math.round(analysis.carbs),
-            fats: Math.round(analysis.fats),
-            date: new Date()
-          });
-        }
+      // إضافة كل وجبة مع نتائج التحليل الخاصة بها
+      for (let i = 0; i < allFoods.length; i++) {
+        const food = allFoods[i];
+        const analysis = analysisResults[i];
+
+        await addEntry({
+          food: food.food,
+          quantity: food.quantity || '1',
+          unit: food.unit || '',
+          calories: analysis.calories,
+          protein: analysis.protein,
+          carbs: analysis.carbs,
+          fats: analysis.fats,
+          date: new Date()
+        });
       }
     } catch (error) {
       console.error('Error handling nutrition analysis:', error);

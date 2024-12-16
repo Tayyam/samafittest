@@ -82,8 +82,13 @@ export interface InBodyStats {
 export interface RankingData {
   userId: string;
   name: string;
-  score: number;
+  commitmentScore: number;
+  inBodyScore: number;
+  totalScore: number;
   progress: number;
+  weight: number | null;
+  fatPercentage: number | null;
+  muscleMass: number | null;
 }
 
 // Admin Types

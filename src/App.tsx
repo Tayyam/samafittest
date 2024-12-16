@@ -7,6 +7,7 @@ import { NutritionPage } from './pages/nutrition/NutritionPage';
 import { WorkoutPage } from './pages/workouts/WorkoutPage';
 import { InBodyPage } from './pages/inbody/InBodyPage';
 import { RankingPage } from './pages/ranking/RankingPage';
+import { UsersPage } from './pages/users/UsersPage';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 
 function App() {
@@ -48,6 +49,11 @@ function App() {
             <Route path="/ranking" element={
               <ProtectedRoute>
                 <RankingPage />
+              </ProtectedRoute>
+            } />
+            <Route path="/users" element={
+              <ProtectedRoute>
+                <UsersPage />
               </ProtectedRoute>
             } />
           </Routes>

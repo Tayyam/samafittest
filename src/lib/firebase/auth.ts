@@ -8,6 +8,17 @@ import {
 import { auth } from './config';
 import { createUser, getUserData } from './firestore';
 import type { User } from '../../types';
+import { 
+  collection, 
+  getDocs, 
+  doc, 
+  updateDoc, 
+  deleteDoc,
+  query,
+  where 
+} from 'firebase/firestore';
+import { db } from './config';
+import type { UserRole } from '../../types';
 
 export const signIn = async (email: string, password: string) => {
   try {
@@ -51,4 +62,23 @@ export const signOut = async () => {
 
 export const onAuthChange = (callback: (user: FirebaseUser | null) => void) => {
   return onAuthStateChanged(auth, callback);
+};
+
+export const getAllUsers = async () => {
+  const usersRef = collection(db, 'users');
+  const snapshot = await getDocs(usersRef);
+  return snapshot.docs.map(doc => ({
+    id: doc.id,
+    ...doc.data()
+  }));
+};
+
+export const updateUserRole = async (userId: string, newRole: UserRole) => {
+  const userRef = doc(db, 'users', userId);
+  await updateDoc(userRef, { role: newRole });
+};
+
+export const deleteUser = async (userId: string) => {
+  const userRef = doc(db, 'users', userId);
+  await deleteDoc(userRef);
 };
