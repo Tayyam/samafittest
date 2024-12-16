@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Home, Utensils, Dumbbell, Activity, Trophy, Users } from 'lucide-react';
+import { Home, Utensils, Database, Dumbbell, Activity, Trophy, Users } from 'lucide-react';
 import { useAuthContext } from '../../contexts/AuthContext';
 
 export const Sidebar = () => {
@@ -14,7 +14,10 @@ export const Sidebar = () => {
   ];
 
   if (user?.role === 'admin') {
-    links.push({ to: '/users', icon: Users, label: 'المستخدمين' });
+    links.push(
+      { to: '/users', icon: Users, label: 'المستخدمين' },
+      { to: '/nutrition-properties', icon: Database, label: 'خصائص التغذية' }
+    );
   }
 
   return (

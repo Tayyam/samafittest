@@ -1,70 +1,76 @@
-import { useState, useEffect } from 'react';
-import { DashboardLayout } from '../../components/layout/DashboardLayout';
+import { useState } from 'react';
+import { DashboardLayout } from '../../components/layouts/DashboardLayout';
 import { NutritionInput } from '../../components/nutrition/NutritionInput';
 import { NutritionTable } from '../../components/nutrition/NutritionTable';
 import { NutritionStats } from '../../components/nutrition/NutritionStats';
+import { CopyMealsDialog } from '../../components/nutrition/CopyMealsDialog';
+import { PreviousMealsDialog } from '../../components/nutrition/PreviousMealsDialog';
+import { addNutritionEntry } from '../../lib/firebase/nutrition';
 import { useNutrition } from '../../hooks/useNutrition';
-import { useNutritionAnalysis } from '../../hooks/useNutritionAnalysis';
-import { analyzeNutritionText } from '../../lib/ai/nutritionAnalyzer';
+import { Button } from '../../components/ui/Button';
 
 export const NutritionPage = () => {
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const { entries, addEntry, deleteEntry, deleteAllEntries, loading } = useNutrition(selectedDate);
-  const { loading: analysisLoading, handleBatchAnalysis } = useNutritionAnalysis();
+  const [isCopyDialogOpen, setIsCopyDialogOpen] = useState(false);
+  const [isPreviousMealsOpen, setIsPreviousMealsOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  const {
+    entries,
+    addEntry,
+    deleteEntry,
+    deleteAllEntries,
+    loading,
+    analysisLoading
+  } = useNutrition(selectedDate);
 
   const handleNutritionSubmit = async (text: string) => {
     try {
-      const meals = await analyzeNutritionText(text);
+      setIsSubmitting(true);
+      console.log('Submitting nutrition text:', text);
       
-      // تجميع كل الأطعمة من جميع الوجبات
-      const allFoods = meals.flatMap(meal => meal.foods);
+      // إضافة الوجبة مباشرة
+      const result = await addNutritionEntry({
+        food: text,
+        amount: 100, // كمية افتراضية
+        unit: 'جرام'
+      });
       
-      // تحليل جميع الأطعمة دفعة واحدة
-      const analysisResults = await handleBatchAnalysis(allFoods);
-
-      // إضافة كل وجبة مع نتائج التحليل الخاصة بها
-      for (let i = 0; i < allFoods.length; i++) {
-        const food = allFoods[i];
-        const analysis = analysisResults[i];
-
-        await addEntry({
-          food: food.food,
-          quantity: food.quantity || '1',
-          unit: food.unit || '',
-          calories: analysis.calories,
-          protein: analysis.protein,
-          carbs: analysis.carbs,
-          fats: analysis.fats,
-          date: new Date()
-        });
+      console.log('Added nutrition entry:', result);
+      
+      // تحديث القائمة
+      if (result) {
+        await addEntry(result);
       }
     } catch (error) {
-      console.error('Error handling nutrition analysis:', error);
+      console.error('Error submitting nutrition:', error);
+      // يمكنك إضافة إشعار خطأ هنا
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <h1 className="text-2xl font-bold text-gray-900">تتبع التغذية</h1>
-          <input
-            type="date"
-            value={selectedDate.toISOString().split('T')[0]}
-            onChange={(e) => setSelectedDate(new Date(e.target.value))}
-            className="rounded-md border-gray-300 shadow-sm focus:border-sama-light focus:ring-sama-light"
-          />
+        <div className="flex justify-between items-center">
+          <h1 className="text-2xl font-bold text-gray-900">التغذية</h1>
+          <div className="flex space-x-2 space-x-reverse">
+            <Button onClick={() => setIsCopyDialogOpen(true)}>
+              نسخ وجبات يوم آخر
+            </Button>
+            <Button onClick={() => setIsPreviousMealsOpen(true)}>
+              الوجبات السابقة
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
-            <div className="bg-white p-6 rounded-lg shadow-sm">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">إضافة وجبة جديدة</h2>
-              <NutritionInput 
-                onSubmit={handleNutritionSubmit}
-                isLoading={analysisLoading || loading}
-              />
-            </div>
+            <NutritionInput 
+              onSubmit={handleNutritionSubmit}
+              isLoading={isSubmitting || analysisLoading}
+            />
             
             <NutritionTable 
               entries={entries} 
@@ -78,6 +84,19 @@ export const NutritionPage = () => {
             <NutritionStats entries={entries} />
           </div>
         </div>
+
+        <CopyMealsDialog
+          isOpen={isCopyDialogOpen}
+          onClose={() => setIsCopyDialogOpen(false)}
+          onCopy={addEntry}
+          currentDate={selectedDate}
+        />
+
+        <PreviousMealsDialog
+          isOpen={isPreviousMealsOpen}
+          onClose={() => setIsPreviousMealsOpen(false)}
+          onSelect={addEntry}
+        />
       </div>
     </DashboardLayout>
   );

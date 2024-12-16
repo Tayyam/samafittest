@@ -175,3 +175,27 @@ export interface ExportData {
     type: 'line' | 'bar' | 'pie';
   }[];
 }
+
+// إضافة إلى الأنواع الموجودة
+export interface NutritionProperty {
+  id: string;
+  name: string;
+  standardServing: number;
+  unit: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fats: number;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface NutritionPropertyInput {
+  name: string;
+  standardServing: number;
+  unit: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fats: number;
+}

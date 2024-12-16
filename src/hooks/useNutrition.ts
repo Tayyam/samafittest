@@ -1,70 +1,63 @@
 import { useState, useEffect } from 'react';
-import { useAuthContext } from '../contexts/AuthContext';
-import { addNutritionEntry, getNutritionEntries, deleteNutritionEntry, deleteAllNutritionEntries } from '../lib/firebase/firestore';
+import { 
+  getNutritionEntriesByDate, 
+  deleteNutritionEntry,
+  deleteAllNutritionEntries 
+} from '../lib/firebase/nutrition';
 import type { NutritionEntry } from '../types';
 
-export const useNutrition = (date: Date) => {
-  const { user } = useAuthContext();
+export const useNutrition = (selectedDate: Date) => {
   const [entries, setEntries] = useState<NutritionEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
 
   useEffect(() => {
-    let isMounted = true;
+    loadEntries();
+  }, [selectedDate]);
 
-    const fetchEntries = async () => {
-      if (!user) {
-        setLoading(false);
-        return;
-      }
+  const loadEntries = async () => {
+    try {
+      setLoading(true);
+      const data = await getNutritionEntriesByDate(selectedDate.toISOString());
+      console.log('Loaded entries:', data);
+      setEntries(data);
+    } catch (error) {
+      console.error('Error loading entries:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-      try {
-        setLoading(true);
-        const startOfDay = new Date(date);
-        startOfDay.setHours(0, 0, 0, 0);
-        
-        const endOfDay = new Date(date);
-        endOfDay.setHours(23, 59, 59, 999);
-
-        const data = await getNutritionEntries(user.id, startOfDay, endOfDay);
-        if (isMounted) {
-          setEntries(data);
-        }
-      } catch (error) {
-        console.error('Error fetching nutrition entries:', error);
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    fetchEntries();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [user, date]);
+  const addEntry = async (entry: NutritionEntry) => {
+    try {
+      setAnalysisLoading(true);
+      // إضافة الإدخال الجديد إلى القائمة
+      setEntries(prev => [...prev, entry]);
+      await loadEntries(); // إعادة تحميل القائمة للتأكد من التحديث
+    } catch (error) {
+      console.error('Error adding entry:', error);
+      throw error;
+    } finally {
+      setAnalysisLoading(false);
+    }
+  };
 
   const deleteEntry = async (id: string) => {
-    if (!user) return;
-
     try {
       await deleteNutritionEntry(id);
       setEntries(prev => prev.filter(entry => entry.id !== id));
     } catch (error) {
-      console.error('Error deleting nutrition entry:', error);
+      console.error('Error deleting entry:', error);
       throw error;
     }
   };
 
   const deleteAllEntries = async () => {
-    if (!user) return;
-
     try {
-      await deleteAllNutritionEntries(user.id, date);
+      await deleteAllNutritionEntries(selectedDate);
       setEntries([]);
     } catch (error) {
-      console.error('Error deleting all nutrition entries:', error);
+      console.error('Error deleting all entries:', error);
       throw error;
     }
   };
@@ -72,20 +65,8 @@ export const useNutrition = (date: Date) => {
   return {
     entries,
     loading,
-    addEntry: async (entry: Omit<NutritionEntry, 'id'>) => {
-      if (!user) return;
-
-      try {
-        const newEntry = await addNutritionEntry({
-          ...entry,
-          userId: user.id,
-        });
-        setEntries(prev => [newEntry, ...prev]);
-      } catch (error) {
-        console.error('Error adding nutrition entry:', error);
-        throw error;
-      }
-    },
+    analysisLoading,
+    addEntry,
     deleteEntry,
     deleteAllEntries
   };
