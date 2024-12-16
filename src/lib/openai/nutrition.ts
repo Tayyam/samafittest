@@ -18,7 +18,7 @@ const SYSTEM_PROMPT = `أنت خبير تغذية. مهمتك تحليل الن�
         {
           "food": "اسم الطعام",
           "amount": number,
-          "unit": "جرام",
+          "unit": "الوحدة الأصلية (حبة|قطعة|كوب|ملعقة|جرام|...)",
           "calories": number,
           "protein": number,
           "carbs": number,
@@ -30,32 +30,69 @@ const SYSTEM_PROMPT = `أنت خبير تغذية. مهمتك تحليل الن�
 }
 
 مثال للإدخال:
-"موز ١٥٠ جرام
-فول ١٥٠ جرام صافي"
+"فطور:
+- بيضتين مسلوق
+- ٣ حبات تمر
+- كوب حليب
+غداء:
+- صدر دجاج مشوي ٢٠٠ جرام
+- ٢ كوب أرز"
 
 مثال للإخراج:
 {
   "meals": [
     {
-      "type": "snack",
+      "type": "breakfast",
       "items": [
         {
-          "food": "موز",
-          "amount": 150,
-          "unit": "جرام",
-          "calories": 133,
-          "protein": 1.6,
-          "carbs": 34,
-          "fats": 0.4
+          "food": "بيض مسلوق",
+          "amount": 2,
+          "unit": "حبة",
+          "calories": 140,
+          "protein": 12,
+          "carbs": 0,
+          "fats": 10
         },
         {
-          "food": "فول",
-          "amount": 150,
-          "unit": "جرام",
+          "food": "تمر",
+          "amount": 3,
+          "unit": "حبة",
           "calories": 180,
-          "protein": 12,
-          "carbs": 21,
-          "fats": 2.4
+          "protein": 1.5,
+          "carbs": 45,
+          "fats": 0.3
+        },
+        {
+          "food": "حليب",
+          "amount": 1,
+          "unit": "كوب",
+          "calories": 120,
+          "protein": 8,
+          "carbs": 12,
+          "fats": 5
+        }
+      ]
+    },
+    {
+      "type": "lunch",
+      "items": [
+        {
+          "food": "صدر دجاج مشوي",
+          "amount": 200,
+          "unit": "جرام",
+          "calories": 330,
+          "protein": 62,
+          "carbs": 0,
+          "fats": 7.2
+        },
+        {
+          "food": "أرز",
+          "amount": 2,
+          "unit": "كوب",
+          "calories": 450,
+          "protein": 8,
+          "carbs": 98,
+          "fats": 0.8
         }
       ]
     }
@@ -63,18 +100,10 @@ const SYSTEM_PROMPT = `أنت خبير تغذية. مهمتك تحليل الن�
 }
 
 قواعد مهمة:
-- استخدم الكميات الفعلية من النص
-- حول جميع الوحدات إلى جرام
-- القيم الغذائية يجب أن تكون للكمية المحددة وليس لكل 100 جرام
+- احتفظ بالوحدات الأصلية كما وردت في النص
+- احسب القيم الغذائية بناءً على الكمية والوحدة المحددة
 - الأرقام يجب أن تكون بالإنجليزية
-
-المعايير القياسية للتحويل:
-- بيضة = 50 جرام
-- كوب أرز مطبوخ = 150 جرام
-- شريحة خبز = 30 جرام
-- ملعقة زيت = 15 جرام
-- حبة تمر = 15 جرام
-- كوب حليب = 240 مل`;
+- القيم الغذائية يجب أن تكون للكمية المحددة وليس لكل 100 جرام`;
 
 export const analyzeNutrition = async (text: string): Promise<NutritionAnalysis[]> => {
   if (!isConfigured) {
@@ -112,33 +141,31 @@ export const analyzeNutrition = async (text: string): Promise<NutritionAnalysis[
       }
 
       for (const item of meal.items) {
-        // التحقق من وجود جميع القيم المطلوبة
-        if (!item.food || !item.amount || !item.calories || 
-            !item.protein || !item.carbs || !item.fats) {
-          console.warn('Invalid item data:', item);
+        if (!item.food || !item.amount) {
+          console.warn('Missing required fields:', item);
           continue;
         }
 
-        // التحقق من أن القيم رقمية
-        const calories = Number(item.calories);
-        const protein = Number(item.protein);
-        const carbs = Number(item.carbs);
-        const fats = Number(item.fats);
+        const nutritionData = {
+          food: item.food,
+          amount: Number(item.amount),
+          unit: item.unit || 'جرام',
+          calories: Math.round(Number(item.calories) || 0),
+          protein: +Number(item.protein || 0).toFixed(1),
+          carbs: +Number(item.carbs || 0).toFixed(1),
+          fats: +Number(item.fats || 0).toFixed(1)
+        };
 
-        if (isNaN(calories) || isNaN(protein) || isNaN(carbs) || isNaN(fats)) {
+        if (isNaN(nutritionData.amount) || 
+            isNaN(nutritionData.calories) || 
+            isNaN(nutritionData.protein) || 
+            isNaN(nutritionData.carbs) || 
+            isNaN(nutritionData.fats)) {
           console.warn('Invalid numeric values:', item);
           continue;
         }
 
-        analyses.push({
-          food: item.food,
-          amount: Number(item.amount),
-          unit: item.unit || 'جرام',
-          calories: Math.max(0, Math.round(calories)),
-          protein: Math.max(0, Math.round(protein)),
-          carbs: Math.max(0, Math.round(carbs)),
-          fats: Math.max(0, Math.round(fats))
-        });
+        analyses.push(nutritionData);
       }
     }
 
@@ -146,9 +173,11 @@ export const analyzeNutrition = async (text: string): Promise<NutritionAnalysis[
       throw new Error('No valid nutrition data found in response');
     }
 
+    console.log('Analyzed nutrition data:', analyses);
     return analyses;
+
   } catch (error) {
     console.error('Error in nutrition analysis:', error);
-    throw new Error('فشل في تحليل الطعام: ' + (error as Error).message);
+    throw new Error(`فشل في تحليل الطعام: ${error.message}`);
   }
 };
