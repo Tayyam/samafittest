@@ -16,6 +16,8 @@ export interface NutritionEntry {
   id: string;
   userId: string;
   food: string;
+  amount: number;
+  unit: string;
   calories: number;
   protein: number;
   carbs: number;

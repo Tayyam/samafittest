@@ -83,23 +83,22 @@ export const getNutritionEntriesByDate = async (date: string) => {
   })) as NutritionEntry[];
 };
 
-export const addNutritionEntry = async (data: any) => {
+export const addNutritionEntry = async (data: NutritionAnalysis) => {
   try {
     if (!auth.currentUser) throw new Error('No user logged in');
-
     if (!data.food) throw new Error('Food name is required');
 
-    const amount = data.amount ? Number(data.amount) : 100;
+    const normalizedFoodName = data.food.trim().toLowerCase();
 
+    const existingProperty = await findNutritionProperty(normalizedFoodName);
+    
     let nutritionData;
     
-    const existingProperty = await findNutritionProperty(data.food);
-    
     if (existingProperty) {
-      const ratio = amount / existingProperty.standardServing;
+      const ratio = data.amount / existingProperty.standardServing;
       nutritionData = {
         food: data.food,
-        amount: amount,
+        amount: data.amount,
         unit: data.unit || 'جرام',
         calories: Math.round(existingProperty.calories * ratio),
         protein: +(existingProperty.protein * ratio).toFixed(1),
@@ -107,15 +106,26 @@ export const addNutritionEntry = async (data: any) => {
         fats: +(existingProperty.fats * ratio).toFixed(1)
       };
     } else {
-      const analysis = await analyzeNutrition(data.food, amount);
+      const standardRatio = 100 / data.amount;
+      
+      await addNutritionProperty({
+        name: normalizedFoodName,
+        standardServing: 100,
+        unit: 'جرام',
+        calories: Math.round(data.calories * standardRatio),
+        protein: +(data.protein * standardRatio).toFixed(1),
+        carbs: +(data.carbs * standardRatio).toFixed(1),
+        fats: +(data.fats * standardRatio).toFixed(1)
+      });
+
       nutritionData = {
         food: data.food,
-        amount: amount,
+        amount: data.amount,
         unit: data.unit || 'جرام',
-        calories: analysis.calories,
-        protein: analysis.protein,
-        carbs: analysis.carbs,
-        fats: analysis.fats
+        calories: Math.round(data.calories),
+        protein: +data.protein.toFixed(1),
+        carbs: +data.carbs.toFixed(1),
+        fats: +data.fats.toFixed(1)
       };
     }
 
@@ -136,6 +146,29 @@ export const addNutritionEntry = async (data: any) => {
 
   } catch (error) {
     console.error('Error adding nutrition entry:', error);
+    throw error;
+  }
+};
+
+export const addNutritionProperty = async (data: NutritionPropertyInput) => {
+  try {
+    if (!auth.currentUser?.uid) throw new Error('No user logged in');
+
+    const propertiesRef = collection(db, 'nutritionProperties');
+    const q = query(propertiesRef, where('name', '==', data.name));
+    const snapshot = await getDocs(q);
+
+    if (snapshot.empty) {
+      await addDoc(propertiesRef, {
+        ...data,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        createdBy: auth.currentUser.uid
+      });
+      console.log('Added new nutrition property:', data.name);
+    }
+  } catch (error) {
+    console.error('Error adding nutrition property:', error);
     throw error;
   }
 };

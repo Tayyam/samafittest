@@ -36,12 +36,12 @@ export interface NutritionFormData {
 export interface NutritionEntry {
   id: string;
   food: string;
-  quantity?: string;
-  unit?: string;
+  amount: number;
+  unit: string;
   calories: number;
   protein: number;
   carbs: number;
   fats: number;
-  date: Date;
   userId: string;
+  date: Date;
 }

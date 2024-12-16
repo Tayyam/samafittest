@@ -8,6 +8,7 @@ import { PreviousMealsDialog } from '../../components/nutrition/PreviousMealsDia
 import { addNutritionEntry } from '../../lib/firebase/nutrition';
 import { useNutrition } from '../../hooks/useNutrition';
 import { Button } from '../../components/ui/Button';
+import { analyzeNutrition } from '../../lib/openai/nutrition';
 
 export const NutritionPage = () => {
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -27,24 +28,17 @@ export const NutritionPage = () => {
   const handleNutritionSubmit = async (text: string) => {
     try {
       setIsSubmitting(true);
-      console.log('Submitting nutrition text:', text);
+      const analyses = await analyzeNutrition(text);
       
-      // إضافة الوجبة مباشرة
-      const result = await addNutritionEntry({
-        food: text,
-        amount: 100, // كمية افتراضية
-        unit: 'جرام'
-      });
-      
-      console.log('Added nutrition entry:', result);
-      
-      // تحديث القائمة
-      if (result) {
-        await addEntry(result);
+      // إضافة كل طعام كإدخال منفصل
+      for (const analysis of analyses) {
+        const result = await addNutritionEntry(analysis);
+        if (result) {
+          await addEntry(result);
+        }
       }
     } catch (error) {
       console.error('Error submitting nutrition:', error);
-      // يمكنك إضافة إشعار خطأ هنا
     } finally {
       setIsSubmitting(false);
     }
